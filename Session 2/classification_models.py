@@ -173,9 +173,11 @@ def plot_results(results: list[dict], y_test: np.ndarray) -> None:
     # Bar chart: accuracy & F1 side by side
     sns.barplot(data=metrics, x="Model", y="Score", hue="Metric", ax=axes[0], palette="muted")
     axes[0].set_title("Accuracy vs F1 Weighted")
-    axes[0].set_ylim(0, 1.05)
+    axes[0].set_ylim(0, 1.15)
     axes[0].set_xlabel("")
     axes[0].tick_params(axis="x", rotation=15)
+    for container in axes[0].containers:
+        axes[0].bar_label(container, fmt="%.4f", fontsize=7, padding=2)
 
     # Confusion matrix for the best model
     best = max(results, key=lambda r: r["f1_weighted"])
