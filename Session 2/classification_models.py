@@ -64,7 +64,6 @@ def load_ucirepo(dataset_id: int) -> tuple[pd.DataFrame, pd.Series, str]:
 
 
 # Preprocessing data func
-
 def preprocess(X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, np.ndarray]:
     # Encode categorical features
     cat_cols = X.select_dtypes(include=["object", "category"]).columns

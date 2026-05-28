@@ -21,14 +21,14 @@ ITM-660/
 
 ### Session 2 — Classification Pipeline
 
-Uses scikit-learn, Pandas,and Seaborn (for visualization) to build a pipeline that trains and compares multiple classifiers on any CSV dataset.
+Uses scikit-learn, Panda and Seaborn (for visualization) to build a pipeline that trains and compares multiple classifiers on any CSV dataset.
 
 **Models included:**
 - Logistic Regression
 - Random Forest
 - Gradient Boosted Trees
 
-Any arbitrary model can be added to the pipeline
+Any arbitrary model from scikit-learn can be added to the pipeline.
 
 **Features:**
 - Automatic preprocessing: categorical encoding, missing value imputation, feature scaling
@@ -53,7 +53,7 @@ Optional flags:
 ## Setup
 
 ```bash
-pip install scikit-learn pandas numpy matplotlib seaborn
+pip install 'r'
 ```
 
 Python 3.10+ required.
