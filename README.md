@@ -32,7 +32,7 @@ Any arbitrary model from scikit-learn can be added to the pipeline.
 
 **Features:**
 - Automatic preprocessing: categorical encoding, missing value imputation, feature scaling
-- Hold-out evaluation: accuracy and weighted F1
+- Hold-out evaluation: precision, recall, accuracy and weighted F1
 - Stratified k-fold cross-validation
 - Seaborn plots: model comparison bar chart + confusion matrix for the best model
 
