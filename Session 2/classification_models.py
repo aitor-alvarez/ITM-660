@@ -10,6 +10,8 @@ With csv dataset:
 With UCI ML Repository dataset:
     python classification_models.py --ucirepo-id 27
     python classification_models.py --ucirepo-id 27 --test-size 0.25 --cv-folds 10
+    python classification_models.py --ucirepo-id 27 --test-size 0.25 --cv-folds 10 --best-metric f2_weighted
+
 
 Importing as a module:
     from classification_models import run, run_ucirepo
@@ -28,12 +30,15 @@ from ucimlrepo import fetch_ucirepo
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
     f1_score,
+    fbeta_score,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
@@ -73,11 +78,8 @@ def preprocess(X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, np.ndarray]
     # Fill missing values
     X = X.fillna(X.median(numeric_only=True))
 
-    # Encode target if it is categorical
-    if y.dtype == object or str(y.dtype) == "category":
-        y = LabelEncoder().fit_transform(y.astype(str))
-    else:
-        y = y.to_numpy()
+    # Always encode target so classes start at 0 (required by XGBoost)
+    y = LabelEncoder().fit_transform(y)
 
     return X, y
 
@@ -95,6 +97,10 @@ MODELS: dict[str, Pipeline] = {
         ("scaler", StandardScaler()),
         ("clf", GradientBoostingClassifier(n_estimators=200, random_state=42)),
     ]),
+    "XGBoost": Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", XGBClassifier(n_estimators=200, random_state=42, eval_metric="logloss", verbosity=0)),
+    ]),
 }
 
 
@@ -110,6 +116,13 @@ def evaluate(
 ) -> dict:
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)
+
+    n_classes = y_prob.shape[1]
+    auc = roc_auc_score(
+        y_test, y_prob if n_classes > 2 else y_prob[:, 1],
+        multi_class="ovr", average="weighted"
+    )
 
     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
     cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring="f1_weighted")
@@ -120,6 +133,8 @@ def evaluate(
         "precision": precision_score(y_test, y_pred, average="weighted"),
         "recall": recall_score(y_test, y_pred, average="weighted"),
         "f1_weighted": f1_score(y_test, y_pred, average="weighted"),
+        "f2_weighted": fbeta_score(y_test, y_pred, beta=2, average="weighted"),
+        "auc": auc,
         "cv_f1_mean": cv_scores.mean(),
         "cv_f1_std": cv_scores.std(),
         "y_pred": y_pred,
@@ -129,41 +144,43 @@ def evaluate(
 
 # Report results
 
-def print_summary(results: list[dict], y_test: np.ndarray) -> None:
-    print("\n" + "=" * 80)
-    print(f"{'MODEL':<28} {'ACCURACY':>9} {'PRECISION':>10} {'RECALL':>7} {'F1':>7} {'CV F1':>14}")
-    print("-" * 80)
+def print_summary(results: list[dict], y_test: np.ndarray, best_metric: str = "auc") -> None:
+    print("\n" + "=" * 100)
+    print(f"{'MODEL':<28} {'ACCURACY':>9} {'PRECISION':>10} {'RECALL':>7} {'F1':>7} {'F2':>7} {'AUC':>7} {'CV F1':>14}")
+    print("-" * 100)
     for r in results:
         cv_str = f"{r['cv_f1_mean']:.4f} ± {r['cv_f1_std']:.4f}"
         print(
             f"{r['model']:<28} {r['accuracy']:>9.4f} {r['precision']:>10.4f}"
-            f" {r['recall']:>7.4f} {r['f1_weighted']:>7.4f} {cv_str:>14}"
+            f" {r['recall']:>7.4f} {r['f1_weighted']:>7.4f} {r['f2_weighted']:>7.4f} {r['auc']:>7.4f} {cv_str:>14}"
         )
-    print("=" * 80)
+    print("=" * 100)
 
-    best = max(results, key=lambda r: r["f1_weighted"])
-    print(f"\nBest model: {best['model']}  (F1 = {best['f1_weighted']:.4f})\n")
+    best = max(results, key=lambda r: r[best_metric])
+    print(f"\nBest model: {best['model']}  ({best_metric} = {best[best_metric]:.4f})\n")
 
     print("--- Classification report for best model ---")
     print(classification_report(y_test, best["y_pred"]))
 
 
 # Plot results
-def plot_results(results: list[dict], y_test: np.ndarray) -> None:
+def plot_results(results: list[dict], y_test: np.ndarray, best_metric: str = "auc") -> None:
     model_names = [r["model"] for r in results]
     metrics = pd.DataFrame({
-        "Model": model_names * 4,
+        "Model": model_names * 5,
         "Score": (
-            [r["accuracy"]   for r in results] +
-            [r["precision"]  for r in results] +
-            [r["recall"]     for r in results] +
-            [r["f1_weighted"] for r in results]
+            [r["accuracy"]    for r in results] +
+            [r["precision"]   for r in results] +
+            [r["recall"]      for r in results] +
+            [r["f1_weighted"] for r in results] +
+            [r["f2_weighted"] for r in results]
         ),
         "Metric": (
-            ["Accuracy"]  * len(results) +
-            ["Precision"] * len(results) +
-            ["Recall"]    * len(results) +
-            ["F1 Weighted"] * len(results)
+            ["Accuracy"]   * len(results) +
+            ["Precision"]  * len(results) +
+            ["Recall"]     * len(results) +
+            ["F1 Weighted"] * len(results) +
+            ["F2 Weighted"] * len(results)
         ),
     })
 
@@ -180,7 +197,7 @@ def plot_results(results: list[dict], y_test: np.ndarray) -> None:
         axes[0].bar_label(container, fmt="%.4f", fontsize=7, padding=2)
 
     # Confusion matrix for the best model
-    best = max(results, key=lambda r: r["f1_weighted"])
+    best = max(results, key=lambda r: r[best_metric])
     cm = confusion_matrix(y_test, best["y_pred"])
     sns.heatmap(
         cm,
@@ -223,6 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--cv-folds", type=int, default=5, metavar="N",
         help="Number of cross-validation folds (default: 5)",
     )
+    p.add_argument(
+        "--best-metric",
+        choices=["accuracy", "precision", "recall", "f1_weighted", "f2_weighted", "auc"],
+        default="auc",
+        help="Metric used to select the best model (default: auc)",
+    )
     return p
 
 
@@ -231,6 +254,7 @@ def _run_pipeline(
     y: pd.Series,
     test_size: float,
     cv_folds: int,
+    best_metric: str = "auc",
 ) -> list[dict]:
     print(f"Shape: {X.shape}  |  Classes: {y.nunique() if hasattr(y, 'nunique') else len(set(y))}")
 
@@ -247,30 +271,30 @@ def _run_pipeline(
         r = evaluate(name, model, X_train, X_test, y_train, y_test, cv_folds)
         results.append(r)
 
-    print_summary(results, y_test)
-    plot_results(results, y_test)
+    print_summary(results, y_test, best_metric)
+    plot_results(results, y_test, best_metric)
     return results
 
 
-def run(csv_path: str, target: str, test_size: float = 0.2, cv_folds: int = 5) -> list[dict]:
+def run(csv_path: str, target: str, test_size: float = 0.2, cv_folds: int = 5, best_metric: str = "auc") -> list[dict]:
     print(f"\nLoading CSV: {csv_path}  (target: '{target}')")
     X, y = load_csv(csv_path, target)
-    return _run_pipeline(X, y, test_size=test_size, cv_folds=cv_folds)
+    return _run_pipeline(X, y, test_size=test_size, cv_folds=cv_folds, best_metric=best_metric)
 
 
-def run_ucirepo(dataset_id: int, test_size: float = 0.2, cv_folds: int = 5) -> list[dict]:
+def run_ucirepo(dataset_id: int, test_size: float = 0.2, cv_folds: int = 5, best_metric: str = "auc") -> list[dict]:
     print(f"\nFetching UCI ML Repository dataset id={dataset_id}...")
     X, y, name = load_ucirepo(dataset_id)
     print(f"Dataset: {name}")
-    return _run_pipeline(X, y, test_size=test_size, cv_folds=cv_folds)
+    return _run_pipeline(X, y, test_size=test_size, cv_folds=cv_folds, best_metric=best_metric)
 
 
 def main() -> None:
     args = build_parser().parse_args()
     if args.ucirepo_id:
-        run_ucirepo(args.ucirepo_id, args.test_size, args.cv_folds)
+        run_ucirepo(args.ucirepo_id, args.test_size, args.cv_folds, args.best_metric)
     else:
-        run(args.csv, args.target, args.test_size, args.cv_folds)
+        run(args.csv, args.target, args.test_size, args.cv_folds, args.best_metric)
 
 
 if __name__ == "__main__":
