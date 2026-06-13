@@ -5,3 +5,6 @@ __pycache__/
 .DS_Store
 .venv/
 *.exe
+Session 6/yelp_reviews.parquet
+*.csv
+*.parquetgit add .
